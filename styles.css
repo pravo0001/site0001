@@ -795,7 +795,7 @@ textarea:focus {
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  flex-wrap: wrap
+  flex-wrap: wrap;
   width: min(1120px, calc(100% - 40px));
   margin: 2rem auto 0;
 }
