@@ -3,6 +3,26 @@ if (yearNode) {
   yearNode.textContent = new Date().getFullYear().toString();
 }
 
+const LEGACY_NAV_HREFS = new Map([
+  ["index.html#focus", "directions.html"],
+  ["./index.html#focus", "directions.html"],
+  ["index.html#about", "about.html"],
+  ["./index.html#about", "about.html"],
+  ["index.html#process", "process.html"],
+  ["./index.html#process", "process.html"],
+  ["index.html#contact", "contact.html"],
+  ["./index.html#contact", "contact.html"],
+]);
+
+document.querySelectorAll("a[href]").forEach((a) => {
+  const href = a.getAttribute("href");
+  if (!href) return;
+  const next = LEGACY_NAV_HREFS.get(href.trim());
+  if (next) {
+    a.setAttribute("href", next);
+  }
+});
+
 const form = document.querySelector("#consultation-form");
 const note = document.querySelector("#form-note");
 const phoneInput = form?.querySelector('input[name="phone"]');
