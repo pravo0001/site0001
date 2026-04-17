@@ -1,5 +1,4 @@
 const CURRENT_YEAR = new Date().getFullYear().toString();
-const CONSULTATION_EMAIL = "contact@taxlawyer.com.ua";
 const THEME_MODE_KEY = "site-theme-mode";
 const body = document.body;
 const themeToggle = document.querySelector("#theme-toggle");
@@ -132,29 +131,30 @@ if (menuToggle instanceof HTMLButtonElement && menu instanceof HTMLElement) {
   }
 }
 
-const normalizePhone = (value) => {
-  const trimmed = String(value ?? "").trim();
-  if (!trimmed) return "";
+const PHONE_PREFIX = "+380";
+const TELEGRAM_BOT_TOKEN = "8556207665:AAF-6bJnbwQOREkA3jAqFiAVmqQTFumiUgY";
+const TELEGRAM_CHAT_ID = "1262055797";
+const SPAM_MIN_FILL_MS = 3500;
+const SPAM_COOLDOWN_MS = 120000;
+const LAST_SUBMIT_KEY = "consultation-last-submit-at";
 
-  const hasPlus = trimmed.startsWith("+");
-  const digits = trimmed.replace(/\D/g, "").slice(0, 15);
-  if (!digits) return "";
-
-  return `${hasPlus ? "+" : ""}${digits}`;
+const normalizeUaPhone = (raw) => {
+  let digits = String(raw ?? "").replace(/\D/g, "");
+  if (digits.startsWith("380")) digits = digits.slice(3);
+  if (digits.startsWith("0")) digits = digits.slice(1);
+  digits = digits.slice(0, 9);
+  return `${PHONE_PREFIX}${digits}`;
 };
 
-const buildMailtoUrl = ({ name, phone, message, pageUrl }) => {
-  const subject = `Запит на консультацію: ${name}`;
-  const body = [
-    "Нова заявка з сайту taxlawyer.com.ua",
-    "",
-    `Ім'я: ${name}`,
-    `Телефон: ${phone}`,
-    `Суть питання: ${message || "-"}`,
-    `Сторінка: ${pageUrl}`,
-  ].join("\n");
-
-  return `mailto:${CONSULTATION_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+const setPhoneCaretToEnd = (input) => {
+  const end = input.value.length;
+  requestAnimationFrame(() => {
+    try {
+      input.setSelectionRange(end, end);
+    } catch {
+      // ignore
+    }
+  });
 };
 
 document.querySelectorAll("[data-consultation-form]").forEach((form) => {
@@ -165,12 +165,82 @@ document.querySelectorAll("[data-consultation-form]").forEach((form) => {
   const createdAt = Date.now();
 
   if (phoneInput instanceof HTMLInputElement) {
+    phoneInput.value = normalizeUaPhone(phoneInput.value);
+
+    phoneInput.addEventListener("focus", () => {
+      phoneInput.value = normalizeUaPhone(phoneInput.value);
+      setPhoneCaretToEnd(phoneInput);
+    });
+
+    phoneInput.addEventListener("click", () => {
+      if (phoneInput.selectionStart !== null && phoneInput.selectionStart < PHONE_PREFIX.length) {
+        setPhoneCaretToEnd(phoneInput);
+      }
+    });
+
+    phoneInput.addEventListener("keydown", (event) => {
+      if (event.key !== "Backspace" && event.key !== "Delete") return;
+      if (phoneInput.selectionStart !== phoneInput.selectionEnd) return;
+
+      if (event.key === "Backspace" && (phoneInput.selectionStart ?? 0) <= PHONE_PREFIX.length) {
+        event.preventDefault();
+        setPhoneCaretToEnd(phoneInput);
+      }
+
+      if (event.key === "Delete" && (phoneInput.selectionStart ?? 0) < PHONE_PREFIX.length) {
+        event.preventDefault();
+        setPhoneCaretToEnd(phoneInput);
+      }
+    });
+
+    phoneInput.addEventListener("beforeinput", (event) => {
+      if (event.inputType !== "deleteContentBackward") return;
+      const start = phoneInput.selectionStart ?? 0;
+      const end = phoneInput.selectionEnd ?? 0;
+      if (start === end && start <= PHONE_PREFIX.length) {
+        event.preventDefault();
+      }
+    });
+
     phoneInput.addEventListener("input", () => {
-      phoneInput.value = normalizePhone(phoneInput.value);
+      const prev = phoneInput.value;
+      const next = normalizeUaPhone(prev);
+      if (prev !== next) {
+        phoneInput.value = next;
+      }
+
+      if ((phoneInput.selectionStart ?? 0) < PHONE_PREFIX.length) {
+        setPhoneCaretToEnd(phoneInput);
+      }
+    });
+
+    phoneInput.addEventListener("paste", (event) => {
+      event.preventDefault();
+      const pasted = event.clipboardData?.getData("text") ?? "";
+      phoneInput.value = normalizeUaPhone(pasted);
+      setPhoneCaretToEnd(phoneInput);
     });
   }
 
-  form.addEventListener("submit", (event) => {
+  const getLastSubmitAt = () => {
+    try {
+      const raw = localStorage.getItem(LAST_SUBMIT_KEY);
+      const value = Number(raw);
+      return Number.isFinite(value) ? value : 0;
+    } catch {
+      return 0;
+    }
+  };
+
+  const setLastSubmitAt = (timestamp) => {
+    try {
+      localStorage.setItem(LAST_SUBMIT_KEY, String(timestamp));
+    } catch {
+      // ignore
+    }
+  };
+
+  form.addEventListener("submit", async (event) => {
     event.preventDefault();
 
     const nameField = form.querySelector('input[name="name"]');
@@ -179,19 +249,21 @@ document.querySelectorAll("[data-consultation-form]").forEach((form) => {
     const websiteField = form.querySelector('input[name="website"]');
 
     const name = nameField instanceof HTMLInputElement ? nameField.value.trim() : "";
-    const phone = phoneField instanceof HTMLInputElement ? normalizePhone(phoneField.value) : "";
+    const phone = phoneField instanceof HTMLInputElement ? phoneField.value.trim() : "";
     const message = messageField instanceof HTMLTextAreaElement ? messageField.value.trim() : "";
     const website = websiteField instanceof HTMLInputElement ? websiteField.value.trim() : "";
 
     if (!(note instanceof HTMLElement)) return;
 
     if (website) {
-      note.textContent = "Не вдалося підготувати заявку. Спробуйте ще раз.";
+      note.textContent = "Не вдалося надіслати заявку. Спробуйте ще раз.";
       return;
     }
 
-    if (Date.now() - createdAt < 1500) {
-      note.textContent = "Заповніть форму уважно та повторіть відправку через кілька секунд.";
+    const now = Date.now();
+    const filledTooFast = now - createdAt < SPAM_MIN_FILL_MS;
+    if (filledTooFast) {
+      note.textContent = "Заявка відправлена занадто швидко. Будь ласка, повторіть через кілька секунд.";
       return;
     }
 
@@ -210,15 +282,68 @@ document.querySelectorAll("[data-consultation-form]").forEach((form) => {
       return;
     }
 
-    const mailtoUrl = buildMailtoUrl({
-      name,
-      phone,
-      message,
-      pageUrl: window.location.href,
-    });
+    const lastSubmitAt = getLastSubmitAt();
+    const msLeft = lastSubmitAt + SPAM_COOLDOWN_MS - now;
+    if (msLeft > 0) {
+      const secLeft = Math.ceil(msLeft / 1000);
+      note.textContent = `Зачекайте ${secLeft} с перед наступною заявкою.`;
+      return;
+    }
 
-    note.textContent = "Відкриваємо чернетку листа. Якщо поштовий клієнт не запустився, скористайтеся телефоном або месенджером нижче.";
-    window.location.href = mailtoUrl;
-    form.reset();
+    if (/https?:\/\/|www\./i.test(message)) {
+      note.textContent = "Будь ласка, приберіть посилання з повідомлення і спробуйте ще раз.";
+      return;
+    }
+
+    if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+      note.textContent = "Форма не налаштована: додайте токен Telegram-бота та chat id у script.js.";
+      return;
+    }
+
+    note.textContent = "Надсилаємо заявку...";
+
+    const text = [
+      "Нова заявка на консультацію",
+      `Ім'я: ${name || "-"}`,
+      `Телефон: ${phone || "-"}`,
+      `Ситуація: ${message || "-"}`,
+      `Сторінка: ${window.location.href}`,
+      `Час: ${new Date().toLocaleString("uk-UA")}`,
+    ].join("\n");
+
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          text,
+        }),
+      });
+
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+
+      if (!response.ok) {
+        const description = payload && typeof payload === "object" && "description" in payload
+          ? String(payload.description)
+          : "Telegram API error";
+        throw new Error(description);
+      }
+
+      note.textContent = "Дякуємо! Заявку отримано. Ми зв'яжемося з вами найближчим часом.";
+      setLastSubmitAt(Date.now());
+      form.reset();
+      if (phoneInput instanceof HTMLInputElement) {
+        phoneInput.value = PHONE_PREFIX;
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "невідома помилка";
+      note.textContent = `Не вдалося надіслати заявку: ${reason}.`;
+    }
   });
 });

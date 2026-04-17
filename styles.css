@@ -1863,6 +1863,30 @@ body.premium-site * {
   padding: 72px 0 40px;
 }
 
+/* Internal pages should keep the same calm background as Process. */
+.premium-site .page-hero ~ .section.section-soft {
+  background: transparent;
+}
+
+.premium-site .page-hero ~ .section .cta-banner {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+}
+
+.premium-site .page-hero ~ .section .cta-banner h2,
+.premium-site .page-hero ~ .section .cta-banner p {
+  color: inherit;
+}
+
+.premium-site .page-hero ~ .section .cta-banner .btn-ghost {
+  color: var(--text-strong);
+  border-color: color-mix(in srgb, var(--line) 70%, transparent);
+  background: color-mix(in srgb, var(--surface-strong) 72%, transparent);
+}
+
 .premium-site .sr-only,
 .premium-site .hp-field {
   position: absolute;
