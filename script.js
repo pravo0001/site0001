@@ -1,9 +1,87 @@
 const CURRENT_YEAR = new Date().getFullYear().toString();
 const CONSULTATION_EMAIL = "contact@taxlawyer.com.ua";
+const THEME_MODE_KEY = "site-theme-mode";
+const body = document.body;
+const themeToggle = document.querySelector("#theme-toggle");
+const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+const systemThemeMedia = window.matchMedia("(prefers-color-scheme: dark)");
 
 document.querySelectorAll("[data-current-year]").forEach((node) => {
   node.textContent = CURRENT_YEAR;
 });
+
+const applyTheme = (theme) => {
+  const next = theme === "night" ? "night" : "day";
+  const isNight = next === "night";
+
+  body.classList.remove("theme-day", "theme-night");
+  body.classList.add(isNight ? "theme-night" : "theme-day");
+
+  if (themeToggle instanceof HTMLButtonElement) {
+    themeToggle.textContent = isNight ? "☼" : "☾";
+    themeToggle.setAttribute("aria-pressed", isNight ? "true" : "false");
+    themeToggle.setAttribute("aria-label", isNight ? "Увімкнути денну тему" : "Увімкнути нічну тему");
+    themeToggle.setAttribute("title", isNight ? "Увімкнути денну тему" : "Увімкнути нічну тему");
+  }
+
+  if (themeColorMeta instanceof HTMLMetaElement) {
+    themeColorMeta.setAttribute("content", isNight ? "#0b0705" : "#120b08");
+  }
+};
+
+const getStoredThemeMode = () => {
+  try {
+    const saved = localStorage.getItem(THEME_MODE_KEY);
+    return saved === "day" || saved === "night" || saved === "auto" ? saved : null;
+  } catch {
+    return null;
+  }
+};
+
+const setStoredThemeMode = (mode) => {
+  try {
+    localStorage.setItem(THEME_MODE_KEY, mode);
+  } catch {
+    // ignore
+  }
+};
+
+const getSystemTheme = () => (systemThemeMedia.matches ? "night" : "day");
+
+const getPreferredTheme = () => {
+  const storedMode = getStoredThemeMode();
+  if (storedMode === "day" || storedMode === "night") {
+    return storedMode;
+  }
+
+  return getSystemTheme();
+};
+
+applyTheme(getPreferredTheme());
+
+if (themeToggle instanceof HTMLButtonElement) {
+  themeToggle.addEventListener("click", () => {
+    const isNight = body.classList.contains("theme-night");
+    const nextTheme = isNight ? "day" : "night";
+    applyTheme(nextTheme);
+    setStoredThemeMode(nextTheme);
+  });
+}
+
+const handleSystemThemeChange = () => {
+  const storedMode = getStoredThemeMode();
+  if (storedMode === "day" || storedMode === "night") {
+    return;
+  }
+
+  applyTheme(getSystemTheme());
+};
+
+if (typeof systemThemeMedia.addEventListener === "function") {
+  systemThemeMedia.addEventListener("change", handleSystemThemeChange);
+} else if (typeof systemThemeMedia.addListener === "function") {
+  systemThemeMedia.addListener(handleSystemThemeChange);
+}
 
 const menuToggle = document.querySelector(".menu-toggle");
 const menu = document.querySelector(".menu");
